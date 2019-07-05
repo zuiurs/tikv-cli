@@ -52,29 +52,29 @@ func tikvShell(ctx context.Context, cli *rawkv.Client) (int, error) {
 			continue
 		}
 
-		switch opr := string(ts[0]); opr {
-		case "get":
-			v, err := kvGet(ctx2, cli, ts[1:])
+		switch ts[0].Type {
+		case GET:
+			v, err := kvGet(ctx, cli, ts[1:])
 			if err != nil {
 				fmt.Println(err.Error())
 			}
 			fmt.Println(string(v))
-		case "put":
-			err := kvPut(ctx2, cli, ts[1:])
+		case PUT:
+			err := kvPut(ctx, cli, ts[1:])
 			if err != nil {
 				fmt.Println(err.Error())
 			} else {
 				fmt.Println("successed!")
 			}
-		case "delete":
-			err := kvDelete(ctx2, cli, ts[1:])
+		case DELETE:
+			err := kvDelete(ctx, cli, ts[1:])
 			if err != nil {
 				fmt.Println(err.Error())
 			} else {
 				fmt.Println("successed!")
 			}
 		default:
-			fmt.Printf("No such command: %s\n", opr)
+			fmt.Printf("No such command: %s\n", ts[0])
 		}
 	}
 }
@@ -84,7 +84,7 @@ func kvGet(ctx context.Context, cli *rawkv.Client, opds []Token) ([]byte, error)
 		return nil, fmt.Errorf("1 arg required")
 	}
 
-	return cli.Get(ctx, []byte(opds[0]))
+	return cli.Get(ctx, opds[0].Literal)
 }
 
 func kvPut(ctx context.Context, cli *rawkv.Client, opds []Token) error {
@@ -92,7 +92,7 @@ func kvPut(ctx context.Context, cli *rawkv.Client, opds []Token) error {
 		return fmt.Errorf("2 arg required")
 	}
 
-	return cli.Put(ctx, []byte(opds[0]), []byte(opds[1]))
+	return cli.Put(ctx, opds[0].Literal, opds[1].Literal)
 }
 
 func kvDelete(ctx context.Context, cli *rawkv.Client, opds []Token) error {
@@ -100,21 +100,5 @@ func kvDelete(ctx context.Context, cli *rawkv.Client, opds []Token) error {
 		return fmt.Errorf("1 arg required")
 	}
 
-	return cli.Delete(ctx, []byte(opds[0]))
-}
-
-//====
-
-type Token []byte
-
-func tokenizer(input string) []Token {
-	ss := strings.Split(input, " ")
-
-	tokens := make([]Token, len(ss))
-	for i := range ss {
-		lower := strings.ToLower(ss[i])
-		tokens[i] = Token([]byte(lower))
-	}
-
-	return tokens
+	return cli.Delete(ctx, opds[0].Literal)
 }
