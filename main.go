@@ -7,30 +7,52 @@ import (
 	"os"
 	"strings"
 
+	flag "github.com/spf13/pflag"
 	"github.com/tikv/client-go/config"
 	"github.com/tikv/client-go/rawkv"
 )
 
+const (
+	StatusClientCreateFailed = 10
+	StatusScanFailed         = 30
+)
+
+var (
+	pdHosts string
+)
+
+func init() {
+	flag.StringVarP(&pdHosts, "pdhosts", "h", "0.0.0.0:2379", "hosts of placement driver delimited by ','")
+}
+
 func main() {
-	ctx := context.Background()
+	flag.Parse()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
 	cfg := config.Default()
-	cli, err := rawkv.NewClient(ctx, []string{"0.0.0.0:23791"}, cfg)
+
+	cli, err := rawkv.NewClient(ctx, strings.Split(pdHosts, ","), cfg)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err.Error())
-		os.Exit(-1)
+		os.Exit(StatusClientCreateFailed)
 	}
 
-	statusCode, err := tikvShell(ctx, cli)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err.Error())
+	var statusCode int
+	// start interactive shell
+	if len(flag.Args()) == 0 {
+		statusCode, err = tikvShell(ctx, cli)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err.Error())
+		}
 	}
 
 	os.Exit(statusCode)
 }
 
 func tikvShell(ctx context.Context, cli *rawkv.Client) (int, error) {
-	ctx2, cancel := context.WithCancel(ctx)
+	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
 	sc := bufio.NewScanner(os.Stdin)
@@ -39,7 +61,7 @@ func tikvShell(ctx context.Context, cli *rawkv.Client) (int, error) {
 		fmt.Print("> ")
 		scanned := sc.Scan()
 		if !scanned {
-			return 100, fmt.Errorf("failed to scan")
+			return StatusScanFailed, fmt.Errorf("failed to scan")
 		}
 
 		line := sc.Text()
