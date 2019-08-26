@@ -22,16 +22,20 @@ func (t Token) String() string {
 	return fmt.Sprintf("{Type: %d, Literal: %s}", t.Type, string(t.Literal))
 }
 
-func tokenizer(input string) []Token {
+func tokenize(input string) []Token {
 	ss := strings.Fields(input)
 
-	if len(ss) == 0 {
+	return tokenizeFromArray(ss)
+}
+
+func tokenizeFromArray(inputs []string) []Token {
+	if len(inputs) == 0 {
 		return nil
 	}
 
-	tokens := make([]Token, len(ss))
+	tokens := make([]Token, len(inputs))
 
-	for i, v := range ss {
+	for i, v := range inputs {
 		if i == 0 {
 			var t int
 			switch strings.ToUpper(v) {

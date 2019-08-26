@@ -46,6 +46,11 @@ func main() {
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err.Error())
 		}
+	} else {
+		statusCode, err = tikvExec(ctx, cli, flag.Args())
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err.Error())
+		}
 	}
 
 	os.Exit(statusCode)
@@ -69,58 +74,127 @@ func tikvShell(ctx context.Context, cli *rawkv.Client) (int, error) {
 			continue
 		}
 
-		ts := tokenizer(line)
+		ts := tokenize(line)
 		if len(ts) == 0 {
 			continue
 		}
 
-		switch ts[0].Type {
-		case GET:
-			v, err := kvGet(ctx, cli, ts[1:])
-			if err != nil {
-				fmt.Println(err.Error())
+		result := kvOps(ctx, cli, ts)
+		if err := result.Err(); err != nil {
+			fmt.Println(err.Error())
+		} else {
+			if _, ok := result.(*kvReadResult); ok {
+				fmt.Println(result.Result())
 			}
-			fmt.Println(string(v))
-		case PUT:
-			err := kvPut(ctx, cli, ts[1:])
-			if err != nil {
-				fmt.Println(err.Error())
-			} else {
+			if _, ok := result.(*kvWriteResult); ok {
 				fmt.Println("successed!")
 			}
-		case DELETE:
-			err := kvDelete(ctx, cli, ts[1:])
-			if err != nil {
-				fmt.Println(err.Error())
-			} else {
-				fmt.Println("successed!")
-			}
-		default:
-			fmt.Printf("No such command: %s\n", ts[0])
 		}
 	}
 }
 
-func kvGet(ctx context.Context, cli *rawkv.Client, opds []Token) ([]byte, error) {
-	if len(opds) != 1 {
-		return nil, fmt.Errorf("1 arg required")
+func tikvExec(ctx context.Context, cli *rawkv.Client, args []string) (int, error) {
+	ts := tokenizeFromArray(args)
+	if len(ts) == 0 {
+		return 0, nil
 	}
 
-	return cli.Get(ctx, opds[0].Literal)
+	result := kvOps(ctx, cli, ts)
+	if err := result.Err(); err != nil {
+		return -1, err
+	} else {
+		if _, ok := result.(*kvReadResult); ok {
+			fmt.Println(result.Result())
+		}
+		if _, ok := result.(*kvWriteResult); ok {
+			fmt.Println("successed!")
+		}
+	}
+
+	return 0, nil
 }
 
-func kvPut(ctx context.Context, cli *rawkv.Client, opds []Token) error {
+func kvOps(ctx context.Context, cli *rawkv.Client, ts []Token) kvResult {
+	var result kvResult
+
+	switch ts[0].Type {
+	case GET:
+		result = kvGet(ctx, cli, ts[1:])
+	case PUT:
+		result = kvPut(ctx, cli, ts[1:])
+	case DELETE:
+		result = kvDelete(ctx, cli, ts[1:])
+	default:
+		result = &kvUnknownResult{Error: fmt.Errorf("No such command: %s\n", ts[0])}
+	}
+
+	return result
+}
+
+type kvResult interface {
+	Result() string
+	Err() error
+}
+
+type kvReadResult struct {
+	ResultByte []byte
+	Error      error
+}
+
+func (r *kvReadResult) Result() string {
+	return string(r.ResultByte)
+}
+
+func (r *kvReadResult) Err() error {
+	return r.Error
+}
+
+type kvWriteResult struct {
+	Error error
+}
+
+func (r *kvWriteResult) Result() string {
+	return ""
+}
+
+func (r *kvWriteResult) Err() error {
+	return r.Error
+}
+
+type kvUnknownResult struct {
+	Error error
+}
+
+func (r *kvUnknownResult) Result() string {
+	return ""
+}
+
+func (r *kvUnknownResult) Err() error {
+	return r.Error
+}
+
+func kvGet(ctx context.Context, cli *rawkv.Client, opds []Token) kvResult {
+	if len(opds) != 1 {
+		return &kvReadResult{ResultByte: nil, Error: fmt.Errorf("1 arg required")}
+	}
+
+	result, err := cli.Get(ctx, opds[0].Literal)
+
+	return &kvReadResult{ResultByte: result, Error: err}
+}
+
+func kvPut(ctx context.Context, cli *rawkv.Client, opds []Token) kvResult {
 	if len(opds) != 2 {
-		return fmt.Errorf("2 arg required")
+		return &kvWriteResult{Error: fmt.Errorf("2 arg required")}
 	}
 
-	return cli.Put(ctx, opds[0].Literal, opds[1].Literal)
+	return &kvWriteResult{Error: cli.Put(ctx, opds[0].Literal, opds[1].Literal)}
 }
 
-func kvDelete(ctx context.Context, cli *rawkv.Client, opds []Token) error {
+func kvDelete(ctx context.Context, cli *rawkv.Client, opds []Token) kvResult {
 	if len(opds) != 1 {
-		return fmt.Errorf("1 arg required")
+		return &kvWriteResult{Error: fmt.Errorf("1 arg required")}
 	}
 
-	return cli.Delete(ctx, opds[0].Literal)
+	return &kvWriteResult{Error: cli.Delete(ctx, opds[0].Literal)}
 }
